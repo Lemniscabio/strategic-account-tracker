@@ -20,7 +20,7 @@ function dedup(signals: RawSignal[]): RawSignal[] {
 
     const lowerTitle = signal.title.toLowerCase();
     let isDup = false;
-    for (const [, existing] of seen) {
+    for (const existing of Array.from(seen.values())) {
       const existingLower = existing.title.toLowerCase();
       if (lowerTitle.includes(existingLower) || existingLower.includes(lowerTitle)) {
         isDup = true;
