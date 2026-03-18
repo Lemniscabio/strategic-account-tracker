@@ -12,6 +12,7 @@ export interface IAccount extends Document {
   nextAction?: string;
   nextActionDate?: Date;
   lastTouchpoint?: Date;
+  keywords: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,6 +29,7 @@ const AccountSchema = new Schema<IAccount>(
     nextAction: { type: String },
     nextActionDate: { type: Date },
     lastTouchpoint: { type: Date },
+    keywords: { type: [String], default: [] },
   },
   { timestamps: true }
 );
