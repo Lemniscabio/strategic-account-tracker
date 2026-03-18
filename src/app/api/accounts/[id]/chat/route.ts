@@ -38,17 +38,12 @@ You can:
 4. Recommend concrete next actions based on signals and stage
 5. Answer freeform questions about the account
 
-YOU HAVE BUILT-IN TOOLS — use them automatically:
-- Google Search: You can search the web for real-time information. When the user asks about news, events, or details you don't have, SEARCH for it.
-- URL Context: You can read the content of any URL. When a signal has a URL and the user asks about it, READ the URL to get the full article content.
-
-RULES:
-- When the user asks about a specific signal that has a URL: READ the URL content, don't guess from the title.
-- When the user says "read", "tell me more", "detail", "search", or "full": USE your tools to get real information.
-- NEVER say "I couldn't retrieve" or guess — always search or read the URL first.
-- If a URL is inaccessible, search the web for the topic instead.
-
-Be concise. Speak like a smart analyst briefing a founder.`;
+RESPONSE RULES:
+- Be concise. Speak like a smart analyst briefing a founder.
+- Go straight to the insights. Do NOT narrate your process (no "I searched for...", "The URL returned...", "Let me search...").
+- Structure with markdown: use **bold** for key points, bullet lists for details.
+- Keep responses focused — 3-5 key points max unless asked for more.
+- When suggesting keywords, include: {"suggestedKeywords": ["kw1", "kw2"]}`;
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -35,9 +35,7 @@ export interface GroundingSource {
 
 /**
  * Generate a streaming chat response with built-in Google Search + URL Context.
- * Returns text chunks AND grounding sources at the end.
- *
- * The last yielded item starting with "SOURCES:" contains JSON array of sources.
+ * Collects grounding sources and appends them as SOURCES: marker at end.
  */
 export async function generateStreamWithSearch(
   messages: { role: "user" | "model"; content: string }[],
@@ -57,7 +55,9 @@ export async function generateStreamWithSearch(
     });
   }
 
-  const response = await client.models.generateContentStream({
+  // Use non-streaming to get grounding metadata (streaming doesn't include it reliably)
+  // Then stream the text to the client
+  const result = await client.models.generateContent({
     model: MODEL,
     contents,
     config: {
@@ -68,33 +68,36 @@ export async function generateStreamWithSearch(
     },
   });
 
-  async function* streamText() {
-    const sources: GroundingSource[] = [];
+  const sources: GroundingSource[] = [];
 
-    for await (const chunk of response) {
-      if (chunk.text) {
-        yield chunk.text;
-      }
-
-      // Extract grounding sources from candidates
-      if (chunk.candidates) {
-        for (const candidate of chunk.candidates) {
-          const metadata = candidate.groundingMetadata;
-          if (metadata?.groundingChunks) {
-            for (const gc of metadata.groundingChunks) {
-              if (gc.web?.uri && gc.web?.title) {
-                // Avoid duplicates
-                if (!sources.some((s) => s.url === gc.web!.uri)) {
-                  sources.push({ title: gc.web.title, url: gc.web.uri });
-                }
-              }
+  // Extract grounding sources from the response
+  if (result.candidates) {
+    for (const candidate of result.candidates) {
+      const metadata = candidate.groundingMetadata;
+      if (metadata?.groundingChunks) {
+        for (const gc of metadata.groundingChunks) {
+          if (gc.web?.uri && gc.web?.title) {
+            if (!sources.some((s) => s.url === gc.web!.uri)) {
+              sources.push({ title: gc.web.title, url: gc.web.uri });
             }
           }
         }
       }
     }
+  }
 
-    // Yield sources as a special marker at the end
+  const fullText = result.text || "";
+
+  // Simulate streaming by yielding text in chunks
+  async function* streamText() {
+    // Yield text in ~100 char chunks for smooth streaming feel
+    const chunkSize = 100;
+    for (let i = 0; i < fullText.length; i += chunkSize) {
+      yield fullText.slice(i, i + chunkSize);
+      // Small delay for streaming feel (only in chunks, not blocking)
+    }
+
+    // Yield sources at the end
     if (sources.length > 0) {
       yield `\nSOURCES:${JSON.stringify(sources)}`;
     }
