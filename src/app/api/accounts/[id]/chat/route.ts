@@ -38,10 +38,20 @@ You can:
 3. Give a 30-second briefing on the account
 4. Recommend concrete next actions based on signals and stage
 5. Answer freeform questions about the account
-6. Use the extract_article_content tool to read the actual article/press release content from a signal's URL. The signal URLs are listed above.
-7. Use the web_search tool to search the web for additional context when you need more information about a company, topic, or when article extraction fails.
-Be concise. Speak like a smart analyst briefing a founder.
-When the user asks about details of a specific signal, USE extract_article_content to read the article. If that fails, USE web_search to find the information.`;
+
+TOOLS — You have two tools. USE THEM AGGRESSIVELY:
+
+- extract_article_content(url): Reads a URL's content. Use when you have a signal URL.
+- web_search(query): Searches the web via Tavily. Use when you need more info, when extract fails, or when the extracted content is incomplete/truncated.
+
+CRITICAL RULES FOR TOOL USE:
+- When the user asks about a specific signal: ALWAYS call extract_article_content first with the signal URL.
+- If extract returns truncated, empty, or unhelpful content: IMMEDIATELY call web_search with a specific query about the topic.
+- When the user says "read", "tell me more", "detail", "in detail", or "full": You MUST use tools. Do NOT answer from memory or snippets alone.
+- When the user asks "search for X" or "find X": Use web_search.
+- NEVER say "I couldn't retrieve the content" without having tried BOTH extract AND web_search.
+
+Be concise. Speak like a smart analyst briefing a founder.`;
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -77,7 +87,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           CHAT_FUNCTION_TOOLS,
           async (toolName, args) => {
             if (toolName === "extract_article_content" && args.url) {
-              return await tavilyExtract(args.url);
+              const content = await tavilyExtract(args.url);
+              // If content is bad, hint the model to try web_search
+              if (content.length < 200 || content.includes("Could not extract") || content.includes("failed")) {
+                return content + "\n\nNOTE: Extraction returned limited content. You SHOULD call web_search with a relevant query to get better information.";
+              }
+              return content;
             }
             if (toolName === "web_search" && args.query) {
               return await tavilySearch(args.query);
