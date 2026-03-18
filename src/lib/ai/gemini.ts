@@ -28,13 +28,16 @@ export async function generateJSON<T = unknown>(
   return JSON.parse(text) as T;
 }
 
+export interface GroundingSource {
+  title: string;
+  url: string;
+}
+
 /**
  * Generate a streaming chat response with built-in Google Search + URL Context.
+ * Returns text chunks AND grounding sources at the end.
  *
- * - googleSearch: Model automatically searches the web when it needs real-time info
- * - urlContext: Model can read specific URLs (signal articles, press releases)
- *
- * No function calling needed — both are native Gemini tools.
+ * The last yielded item starting with "SOURCES:" contains JSON array of sources.
  */
 export async function generateStreamWithSearch(
   messages: { role: "user" | "model"; content: string }[],
@@ -42,7 +45,6 @@ export async function generateStreamWithSearch(
 ): Promise<AsyncGenerator<string>> {
   const client = getClient();
 
-  // Build conversation history
   const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
   if (systemPrompt) {
     contents.push({ role: "user", parts: [{ text: systemPrompt }] });
@@ -67,10 +69,34 @@ export async function generateStreamWithSearch(
   });
 
   async function* streamText() {
+    const sources: GroundingSource[] = [];
+
     for await (const chunk of response) {
       if (chunk.text) {
         yield chunk.text;
       }
+
+      // Extract grounding sources from candidates
+      if (chunk.candidates) {
+        for (const candidate of chunk.candidates) {
+          const metadata = candidate.groundingMetadata;
+          if (metadata?.groundingChunks) {
+            for (const gc of metadata.groundingChunks) {
+              if (gc.web?.uri && gc.web?.title) {
+                // Avoid duplicates
+                if (!sources.some((s) => s.url === gc.web!.uri)) {
+                  sources.push({ title: gc.web.title, url: gc.web.uri });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Yield sources as a special marker at the end
+    if (sources.length > 0) {
+      yield `\nSOURCES:${JSON.stringify(sources)}`;
     }
   }
 

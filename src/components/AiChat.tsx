@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   role: "user" | "model";
   content: string;
+  sources?: { title: string; url: string }[];
 }
 
 interface Props {
@@ -14,20 +16,35 @@ interface Props {
 }
 
 /**
- * Clean up Gemini grounding citations and render basic markdown.
- * Strips [cite: ...] markers and converts **bold** and headings.
+ * Clean Gemini grounding citation markers from response text.
  */
-function cleanResponse(text: string): string {
+function cleanCitations(text: string): string {
   return text
-    // Remove citation markers like [cite: search_1, search_2]
     .replace(/\s*\[cite:\s*[^\]]*\]/g, "")
-    // Remove standalone citation references
     .replace(/\s*\[search_\d+\]/g, "")
-    // Clean up double spaces left by removals
+    .replace(/\s*\[\d+,\s*cite:\s*[^\]]*\]/g, "")
     .replace(/  +/g, " ")
-    // Clean up empty lines left by removals
     .replace(/\n\s*\n\s*\n/g, "\n\n")
     .trim();
+}
+
+/**
+ * Extract sources JSON and clean text from response.
+ */
+function extractSources(text: string): { cleanText: string; sources: { title: string; url: string }[] } {
+  const sourcesIdx = text.lastIndexOf("\nSOURCES:");
+  if (sourcesIdx === -1) {
+    return { cleanText: cleanCitations(text), sources: [] };
+  }
+
+  const cleanText = cleanCitations(text.slice(0, sourcesIdx));
+  const sourcesJson = text.slice(sourcesIdx + 9); // length of "\nSOURCES:"
+  try {
+    const sources = JSON.parse(sourcesJson);
+    return { cleanText, sources: Array.isArray(sources) ? sources : [] };
+  } catch {
+    return { cleanText, sources: [] };
+  }
 }
 
 function parseSuggestedKeywords(text: string): string[] | null {
@@ -40,7 +57,7 @@ function parseSuggestedKeywords(text: string): string[] | null {
       return parsed.suggestedKeywords.filter((k: unknown) => typeof k === "string");
     }
   } catch {
-    // Silent fail — show as plain text
+    // Silent fail
   }
   return null;
 }
@@ -77,7 +94,7 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
       const res = await fetch(`/api/accounts/${accountId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages }),
+        body: JSON.stringify({ messages: newMessages.map((m) => ({ role: m.role, content: m.content })) }),
       });
 
       if (!res.ok || !res.body) throw new Error("Chat request failed");
@@ -104,9 +121,12 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
           fullText += data;
         }
 
+        // Parse sources during streaming (will be complete at end)
+        const { cleanText, sources } = extractSources(fullText);
+
         setMessages((prev) => {
           const updated = [...prev];
-          updated[updated.length - 1] = { role: "model", content: fullText };
+          updated[updated.length - 1] = { role: "model", content: cleanText, sources };
           return updated;
         });
       }
@@ -165,10 +185,37 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
                   : "bg-gray-900 text-gray-300"
               }`}
             >
-              <div className="whitespace-pre-wrap">{msg.role === "model" ? cleanResponse(msg.content) : msg.content}</div>
+              {msg.role === "model" ? (
+                <div className="prose prose-sm prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-strong:text-white">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap">{msg.content}</div>
+              )}
 
+              {/* Sources */}
+              {msg.role === "model" && msg.sources && msg.sources.length > 0 && !streaming && (
+                <div className="mt-2 border-t border-gray-800 pt-2">
+                  <div className="text-xs text-gray-500 mb-1">Sources:</div>
+                  <div className="space-y-1">
+                    {msg.sources.map((src, j) => (
+                      <a
+                        key={j}
+                        href={src.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-xs text-blue-400 hover:text-blue-300 truncate"
+                      >
+                        🔗 {src.title}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Keyword suggestions */}
               {msg.role === "model" && !streaming && (() => {
-                const keywords = parseSuggestedKeywords(cleanResponse(msg.content));
+                const keywords = parseSuggestedKeywords(msg.content);
                 if (!keywords) return null;
                 return (
                   <div className="mt-2 flex flex-wrap gap-1 border-t border-gray-800 pt-2">
