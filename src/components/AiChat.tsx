@@ -13,6 +13,23 @@ interface Props {
   onKeywordsAccepted: (keywords: string[]) => void;
 }
 
+/**
+ * Clean up Gemini grounding citations and render basic markdown.
+ * Strips [cite: ...] markers and converts **bold** and headings.
+ */
+function cleanResponse(text: string): string {
+  return text
+    // Remove citation markers like [cite: search_1, search_2]
+    .replace(/\s*\[cite:\s*[^\]]*\]/g, "")
+    // Remove standalone citation references
+    .replace(/\s*\[search_\d+\]/g, "")
+    // Clean up double spaces left by removals
+    .replace(/  +/g, " ")
+    // Clean up empty lines left by removals
+    .replace(/\n\s*\n\s*\n/g, "\n\n")
+    .trim();
+}
+
 function parseSuggestedKeywords(text: string): string[] | null {
   const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "");
   const match = cleaned.match(/\{"suggestedKeywords"\s*:\s*\[[\s\S]*?\]\}/);
@@ -148,10 +165,10 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
                   : "bg-gray-900 text-gray-300"
               }`}
             >
-              <div className="whitespace-pre-wrap">{msg.content}</div>
+              <div className="whitespace-pre-wrap">{msg.role === "model" ? cleanResponse(msg.content) : msg.content}</div>
 
               {msg.role === "model" && !streaming && (() => {
-                const keywords = parseSuggestedKeywords(msg.content);
+                const keywords = parseSuggestedKeywords(cleanResponse(msg.content));
                 if (!keywords) return null;
                 return (
                   <div className="mt-2 flex flex-wrap gap-1 border-t border-gray-800 pt-2">
