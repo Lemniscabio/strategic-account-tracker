@@ -1,7 +1,6 @@
 import {
   GoogleGenerativeAI,
   SchemaType,
-  DynamicRetrievalMode,
   type FunctionDeclaration,
   type Content,
   type Part,
@@ -118,10 +117,7 @@ export async function generateStreamWithTools(
   const client = getClient();
   const model = client.getGenerativeModel({
     model: MODEL,
-    tools: [
-      { functionDeclarations: tools },
-      { googleSearchRetrieval: { dynamicRetrievalConfig: { mode: DynamicRetrievalMode.MODE_DYNAMIC } } },
-    ],
+    tools: [{ functionDeclarations: tools }],
   });
 
   const contents: Content[] = [];

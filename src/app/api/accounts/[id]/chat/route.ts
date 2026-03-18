@@ -39,8 +39,6 @@ You can:
 5. Answer freeform questions about the account
 6. Use the extract_article_content tool to read the actual article/press release content from a signal's URL. The signal URLs are listed above.
 7. Use the web_search tool to search the web for additional context when you need more information about a company, topic, or when article extraction fails.
-8. Google Search grounding is also enabled — you may receive grounded search results automatically.
-
 Be concise. Speak like a smart analyst briefing a founder.
 When the user asks about details of a specific signal, USE extract_article_content to read the article. If that fails, USE web_search to find the information.`;
 }
