@@ -1,6 +1,7 @@
 import {
   GoogleGenerativeAI,
   SchemaType,
+  DynamicRetrievalMode,
   type FunctionDeclaration,
   type Content,
   type Part,
@@ -67,21 +68,36 @@ export async function generateStream(
   return streamText();
 }
 
-// Tool definitions for the chat agent
-export const CHAT_TOOLS: FunctionDeclaration[] = [
+// Custom tool definitions for the chat agent (Tavily-powered)
+export const CHAT_FUNCTION_TOOLS: FunctionDeclaration[] = [
   {
-    name: "fetch_signal_content",
+    name: "extract_article_content",
     description:
-      "Fetch the full content of a signal's URL (article, press release, etc). Use this when the user asks about the details of a specific signal and you need to read the actual article content to give an accurate answer.",
+      "Extract the full content of a URL (article, press release, etc) using Tavily. Use this when the user asks about details of a specific signal and you have its URL. This works even on paywalled or JS-heavy sites.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         url: {
           type: SchemaType.STRING,
-          description: "The URL of the signal to fetch content from",
+          description: "The URL to extract content from",
         },
       },
       required: ["url"],
+    },
+  },
+  {
+    name: "web_search",
+    description:
+      "Search the web for information using Tavily. Use this when you need to find additional context about a signal, company, or topic that isn't in your current context. Also use this as a fallback when extract_article_content fails.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        query: {
+          type: SchemaType.STRING,
+          description: "The search query",
+        },
+      },
+      required: ["query"],
     },
   },
 ];
@@ -102,7 +118,10 @@ export async function generateStreamWithTools(
   const client = getClient();
   const model = client.getGenerativeModel({
     model: MODEL,
-    tools: [{ functionDeclarations: tools }],
+    tools: [
+      { functionDeclarations: tools },
+      { googleSearchRetrieval: { dynamicRetrievalConfig: { mode: DynamicRetrievalMode.MODE_DYNAMIC } } },
+    ],
   });
 
   const contents: Content[] = [];
@@ -160,7 +179,8 @@ export async function generateStreamWithTools(
           const toolName = part.functionCall.name;
           const toolArgs = part.functionCall.args as Record<string, string>;
 
-          yield `\n\n📡 *Fetching article content...*\n\n`;
+          const statusMsg = toolName === "web_search" ? "🔍 *Searching the web...*" : "📡 *Extracting article content...*";
+          yield `\n\n${statusMsg}\n\n`;
 
           const toolResult = await handleToolCall(toolName, toolArgs);
           functionResponseParts.push({

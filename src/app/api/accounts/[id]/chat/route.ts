@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import Account from "@/lib/models/account";
 import Signal from "@/lib/models/signal";
-import { generateStreamWithTools, CHAT_TOOLS } from "@/lib/ai/gemini";
-import { fetchUrlContent } from "@/lib/ai/fetch-url";
+import { generateStreamWithTools, CHAT_FUNCTION_TOOLS } from "@/lib/ai/gemini";
+import { tavilyExtract, tavilySearch } from "@/lib/ai/tavily";
 
 export const dynamic = "force-dynamic";
 
@@ -37,10 +37,12 @@ You can:
 3. Give a 30-second briefing on the account
 4. Recommend concrete next actions based on signals and stage
 5. Answer freeform questions about the account
-6. Use the fetch_signal_content tool to read the actual article/press release when you need details about a specific signal. The signal URLs are listed above.
+6. Use the extract_article_content tool to read the actual article/press release content from a signal's URL. The signal URLs are listed above.
+7. Use the web_search tool to search the web for additional context when you need more information about a company, topic, or when article extraction fails.
+8. Google Search grounding is also enabled — you may receive grounded search results automatically.
 
 Be concise. Speak like a smart analyst briefing a founder.
-When the user asks about details of a specific signal, USE the fetch_signal_content tool to read the article rather than guessing.`;
+When the user asks about details of a specific signal, USE extract_article_content to read the article. If that fails, USE web_search to find the information.`;
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -73,10 +75,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const gen = await generateStreamWithTools(
           messages,
           systemPrompt,
-          CHAT_TOOLS,
+          CHAT_FUNCTION_TOOLS,
           async (toolName, args) => {
-            if (toolName === "fetch_signal_content" && args.url) {
-              return await fetchUrlContent(args.url);
+            if (toolName === "extract_article_content" && args.url) {
+              return await tavilyExtract(args.url);
+            }
+            if (toolName === "web_search" && args.query) {
+              return await tavilySearch(args.query);
             }
             return "Unknown tool";
           }
