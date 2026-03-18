@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import Account from "@/lib/models/account";
 import Signal from "@/lib/models/signal";
-import { generateStream } from "@/lib/ai/gemini";
+import { generateStreamWithTools, CHAT_TOOLS } from "@/lib/ai/gemini";
+import { fetchUrlContent } from "@/lib/ai/fetch-url";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,8 @@ function buildSystemPrompt(account: Record<string, unknown>, signals: Record<str
     .map((s) => {
       const score = s.relevanceScore ? `[${s.relevanceScore}/5]` : "[unscored]";
       const reason = s.scoreReason ? ` — ${s.scoreReason}` : "";
-      return `${score} ${s.title} (${s.type}, ${s.source}, ${new Date(s.date as string).toLocaleDateString()})${reason}`;
+      const url = s.url ? ` | URL: ${s.url}` : "";
+      return `${score} ${s.title} (${s.type}, ${s.source}, ${new Date(s.date as string).toLocaleDateString()})${reason}${url}`;
     })
     .join("\n");
 
@@ -35,8 +37,10 @@ You can:
 3. Give a 30-second briefing on the account
 4. Recommend concrete next actions based on signals and stage
 5. Answer freeform questions about the account
+6. Use the fetch_signal_content tool to read the actual article/press release when you need details about a specific signal. The signal URLs are listed above.
 
-Be concise. Speak like a smart analyst briefing a founder.`;
+Be concise. Speak like a smart analyst briefing a founder.
+When the user asks about details of a specific signal, USE the fetch_signal_content tool to read the article rather than guessing.`;
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -66,7 +70,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const gen = await generateStream(messages, systemPrompt);
+        const gen = await generateStreamWithTools(
+          messages,
+          systemPrompt,
+          CHAT_TOOLS,
+          async (toolName, args) => {
+            if (toolName === "fetch_signal_content" && args.url) {
+              return await fetchUrlContent(args.url);
+            }
+            return "Unknown tool";
+          }
+        );
         for await (const chunk of gen) {
           controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
         }
