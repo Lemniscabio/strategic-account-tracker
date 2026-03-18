@@ -1,17 +1,11 @@
-import {
-  GoogleGenerativeAI,
-  SchemaType,
-  type FunctionDeclaration,
-  type Content,
-  type Part,
-} from "@google/generative-ai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const MODEL = "gemini-2.5-flash";
 
 function getClient() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY environment variable is required");
-  return new GoogleGenerativeAI(apiKey);
+  return new GoogleGenAI({ apiKey });
 }
 
 export async function generateJSON<T = unknown>(
@@ -19,65 +13,33 @@ export async function generateJSON<T = unknown>(
   systemPrompt?: string
 ): Promise<T> {
   const client = getClient();
-  const model = client.getGenerativeModel({
+
+  const contents = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
+
+  const result = await client.models.generateContent({
     model: MODEL,
-    generationConfig: { responseMimeType: "application/json" },
+    contents,
+    config: {
+      responseMimeType: "application/json",
+    },
   });
 
-  const contents: Content[] = [];
-  if (systemPrompt) {
-    contents.push({ role: "user", parts: [{ text: systemPrompt }] });
-    contents.push({ role: "model", parts: [{ text: "Understood." }] });
-  }
-  contents.push({ role: "user", parts: [{ text: prompt }] });
-
-  const result = await model.generateContent({ contents });
-  const text = result.response.text();
+  const text = result.text || "";
   return JSON.parse(text) as T;
 }
 
-export async function generateStream(
-  messages: { role: "user" | "model"; content: string }[],
-  systemPrompt?: string
-): Promise<AsyncGenerator<string>> {
-  const client = getClient();
-  const model = client.getGenerativeModel({ model: MODEL });
-
-  const contents: Content[] = [];
-  if (systemPrompt) {
-    contents.push({ role: "user", parts: [{ text: systemPrompt }] });
-    contents.push({ role: "model", parts: [{ text: "Understood." }] });
-  }
-  for (const msg of messages) {
-    contents.push({
-      role: msg.role === "user" ? "user" : "model",
-      parts: [{ text: msg.content }],
-    });
-  }
-
-  const result = await model.generateContentStream({ contents });
-
-  async function* streamText() {
-    for await (const chunk of result.stream) {
-      const text = chunk.text();
-      if (text) yield text;
-    }
-  }
-
-  return streamText();
-}
-
-// Custom tool definitions for the chat agent (Tavily-powered)
-export const CHAT_FUNCTION_TOOLS: FunctionDeclaration[] = [
+// Custom function tool definitions for the chat agent (Tavily-powered)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const FUNCTION_DECLARATIONS: any[] = [
   {
     name: "extract_article_content",
     description:
       "Extract the full content of a URL (article, press release, etc) using Tavily. Use this when the user asks about details of a specific signal and you have its URL. This works even on paywalled or JS-heavy sites.",
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
         url: {
-          type: SchemaType.STRING,
+          type: Type.STRING,
           description: "The URL to extract content from",
         },
       },
@@ -89,10 +51,10 @@ export const CHAT_FUNCTION_TOOLS: FunctionDeclaration[] = [
     description:
       "Search the web for information using Tavily. Use this when you need to find additional context about a signal, company, or topic that isn't in your current context. Also use this as a fallback when extract_article_content fails.",
     parameters: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
         query: {
-          type: SchemaType.STRING,
+          type: Type.STRING,
           description: "The search query",
         },
       },
@@ -101,26 +63,23 @@ export const CHAT_FUNCTION_TOOLS: FunctionDeclaration[] = [
   },
 ];
 
-// Tool handler type
 export type ToolHandler = (name: string, args: Record<string, string>) => Promise<string>;
 
 /**
- * Generate a streaming response with tool-calling support.
- * When the model calls a tool, we execute it and continue the conversation.
+ * Generate a streaming response with Google Search grounding + custom tools.
+ * The model can:
+ * 1. Use Google Search grounding automatically (built-in)
+ * 2. Call our custom Tavily tools (extract_article_content, web_search)
  */
 export async function generateStreamWithTools(
   messages: { role: "user" | "model"; content: string }[],
   systemPrompt: string,
-  tools: FunctionDeclaration[],
   handleToolCall: ToolHandler
 ): Promise<AsyncGenerator<string>> {
   const client = getClient();
-  const model = client.getGenerativeModel({
-    model: MODEL,
-    tools: [{ functionDeclarations: tools }],
-  });
 
-  const contents: Content[] = [];
+  // Build conversation history
+  const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
   if (systemPrompt) {
     contents.push({ role: "user", parts: [{ text: systemPrompt }] });
     contents.push({ role: "model", parts: [{ text: "Understood." }] });
@@ -133,63 +92,85 @@ export async function generateStreamWithTools(
   }
 
   async function* streamWithToolLoop(): AsyncGenerator<string> {
-    let currentContents = [...contents];
-    let maxToolRounds = 3; // prevent infinite loops
+    let maxToolRounds = 3;
+
+    // First call with all tools enabled
+    let response = await client.models.generateContentStream({
+      model: MODEL,
+      contents,
+      config: {
+        tools: [
+          { functionDeclarations: FUNCTION_DECLARATIONS },
+          { googleSearch: {} },
+        ],
+      },
+    });
 
     while (maxToolRounds > 0) {
-      const result = await model.generateContentStream({ contents: currentContents });
+      let hasCustomToolCall = false;
+      const functionCalls: Array<{ name: string; args: Record<string, string> }> = [];
 
-      let hasToolCall = false;
-      const responseParts: Part[] = [];
+      for await (const chunk of response) {
+        // Handle text chunks
+        if (chunk.text) {
+          yield chunk.text;
+        }
 
-      for await (const chunk of result.stream) {
-        // Check for function calls
-        const fnCalls = chunk.functionCalls();
-        if (fnCalls && fnCalls.length > 0) {
-          hasToolCall = true;
-          for (const fc of fnCalls) {
-            responseParts.push({ functionCall: { name: fc.name, args: fc.args } });
+        // Check for custom function calls
+        if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+          for (const fc of chunk.functionCalls) {
+            // Only handle our custom tools, not google_search (that's handled by Gemini)
+            if (fc.name === "extract_article_content" || fc.name === "web_search") {
+              hasCustomToolCall = true;
+              functionCalls.push({ name: fc.name, args: fc.args as Record<string, string> });
+            }
           }
         }
-
-        // Stream any text
-        const text = chunk.text();
-        if (text) {
-          responseParts.push({ text });
-          yield text;
-        }
       }
 
-      if (!hasToolCall) {
-        // No tool calls — we're done
-        break;
+      if (!hasCustomToolCall) break;
+
+      // Execute custom tool calls
+      const functionResponses = [];
+      for (const fc of functionCalls) {
+        const statusMsg = fc.name === "web_search" ? "🔍 *Searching the web...*" : "📡 *Extracting article content...*";
+        yield `\n\n${statusMsg}\n\n`;
+
+        const result = await handleToolCall(fc.name, fc.args);
+        functionResponses.push({
+          name: fc.name,
+          response: { content: result },
+        });
       }
 
-      // Add the model's response (with tool calls) to conversation
-      currentContents.push({ role: "model", parts: responseParts });
+      // Continue conversation with tool results — use non-streaming for the follow-up
+      // then stream the final response
+      const followUp = await client.models.generateContentStream({
+        model: MODEL,
+        contents: [
+          ...contents,
+          {
+            role: "model",
+            parts: functionCalls.map((fc) => ({
+              functionCall: { name: fc.name, args: fc.args },
+            })),
+          },
+          {
+            role: "user",
+            parts: functionResponses.map((fr) => ({
+              functionResponse: fr,
+            })),
+          },
+        ],
+        config: {
+          tools: [
+            { functionDeclarations: FUNCTION_DECLARATIONS },
+            { googleSearch: {} },
+          ],
+        },
+      });
 
-      // Execute each tool call and build function response parts
-      const functionResponseParts: Part[] = [];
-      for (const part of responseParts) {
-        if (part.functionCall) {
-          const toolName = part.functionCall.name;
-          const toolArgs = part.functionCall.args as Record<string, string>;
-
-          const statusMsg = toolName === "web_search" ? "🔍 *Searching the web...*" : "📡 *Extracting article content...*";
-          yield `\n\n${statusMsg}\n\n`;
-
-          const toolResult = await handleToolCall(toolName, toolArgs);
-          functionResponseParts.push({
-            functionResponse: {
-              name: toolName,
-              response: { content: toolResult },
-            },
-          });
-        }
-      }
-
-      // Add tool results to conversation
-      currentContents.push({ role: "user", parts: functionResponseParts });
+      response = followUp;
       maxToolRounds--;
     }
   }

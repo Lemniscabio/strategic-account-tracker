@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import Account from "@/lib/models/account";
 import Signal from "@/lib/models/signal";
-import { generateStreamWithTools, CHAT_FUNCTION_TOOLS } from "@/lib/ai/gemini";
+import { generateStreamWithTools } from "@/lib/ai/gemini";
 import { tavilyExtract, tavilySearch } from "@/lib/ai/tavily";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +84,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const gen = await generateStreamWithTools(
           messages,
           systemPrompt,
-          CHAT_FUNCTION_TOOLS,
           async (toolName, args) => {
             if (toolName === "extract_article_content" && args.url) {
               const content = await tavilyExtract(args.url);
