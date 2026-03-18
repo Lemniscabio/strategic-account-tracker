@@ -2,8 +2,7 @@ import { NextRequest } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import Account from "@/lib/models/account";
 import Signal from "@/lib/models/signal";
-import { generateStreamWithTools } from "@/lib/ai/gemini";
-import { tavilyExtract, tavilySearch } from "@/lib/ai/tavily";
+import { generateStreamWithSearch } from "@/lib/ai/gemini";
 
 export const dynamic = "force-dynamic";
 
@@ -39,17 +38,15 @@ You can:
 4. Recommend concrete next actions based on signals and stage
 5. Answer freeform questions about the account
 
-TOOLS — You have two tools. USE THEM AGGRESSIVELY:
+YOU HAVE BUILT-IN TOOLS — use them automatically:
+- Google Search: You can search the web for real-time information. When the user asks about news, events, or details you don't have, SEARCH for it.
+- URL Context: You can read the content of any URL. When a signal has a URL and the user asks about it, READ the URL to get the full article content.
 
-- extract_article_content(url): Reads a URL's content. Use when you have a signal URL.
-- web_search(query): Searches the web via Tavily. Use when you need more info, when extract fails, or when the extracted content is incomplete/truncated.
-
-CRITICAL RULES FOR TOOL USE:
-- When the user asks about a specific signal: ALWAYS call extract_article_content first with the signal URL.
-- If extract returns truncated, empty, or unhelpful content: IMMEDIATELY call web_search with a specific query about the topic.
-- When the user says "read", "tell me more", "detail", "in detail", or "full": You MUST use tools. Do NOT answer from memory or snippets alone.
-- When the user asks "search for X" or "find X": Use web_search.
-- NEVER say "I couldn't retrieve the content" without having tried BOTH extract AND web_search.
+RULES:
+- When the user asks about a specific signal that has a URL: READ the URL content, don't guess from the title.
+- When the user says "read", "tell me more", "detail", "search", or "full": USE your tools to get real information.
+- NEVER say "I couldn't retrieve" or guess — always search or read the URL first.
+- If a URL is inaccessible, search the web for the topic instead.
 
 Be concise. Speak like a smart analyst briefing a founder.`;
 }
@@ -81,24 +78,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const gen = await generateStreamWithTools(
-          messages,
-          systemPrompt,
-          async (toolName, args) => {
-            if (toolName === "extract_article_content" && args.url) {
-              const content = await tavilyExtract(args.url);
-              // If content is bad, hint the model to try web_search
-              if (content.length < 200 || content.includes("Could not extract") || content.includes("failed")) {
-                return content + "\n\nNOTE: Extraction returned limited content. You SHOULD call web_search with a relevant query to get better information.";
-              }
-              return content;
-            }
-            if (toolName === "web_search" && args.query) {
-              return await tavilySearch(args.query);
-            }
-            return "Unknown tool";
-          }
-        );
+        const gen = await generateStreamWithSearch(messages, systemPrompt);
         for await (const chunk of gen) {
           controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
         }
