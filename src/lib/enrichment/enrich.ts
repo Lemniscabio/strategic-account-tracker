@@ -35,12 +35,12 @@ function dedup(signals: RawSignal[]): RawSignal[] {
   return Array.from(seen.values());
 }
 
-export async function enrichAccount(accountId: string, companyName: string): Promise<number> {
+export async function enrichAccount(accountId: string, companyName: string, keywords: string[] = []): Promise<number> {
   await dbConnect();
 
   const [serperResults, rssResults] = await Promise.all([
-    searchSerper(companyName),
-    fetchNewsRss(companyName),
+    searchSerper(companyName, keywords),
+    fetchNewsRss(companyName, keywords),
   ]);
 
   const rawSignals: RawSignal[] = [

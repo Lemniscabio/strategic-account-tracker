@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Types } from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Signal from "@/lib/models/signal";
 import Account from "@/lib/models/account";
 import { TOUCHPOINT_TYPES } from "@/lib/constants";
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const dynamic = "force-dynamic";
+
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await dbConnect();
   const { id } = await params;
-  const signals = await Signal.find({ accountId: id, status: { $ne: "Dismissed" } })
-    .sort({ date: -1 })
-    .lean();
+  const signals = await Signal.aggregate([
+    { $match: { accountId: new Types.ObjectId(id), status: { $ne: "Dismissed" } } },
+    { $addFields: { hasScore: { $cond: [{ $ifNull: ["$relevanceScore", false] }, 1, 0] } } },
+    { $sort: { hasScore: -1, relevanceScore: -1, date: -1 } },
+    { $project: { hasScore: 0 } },
+  ]);
   return NextResponse.json(signals);
 }
 

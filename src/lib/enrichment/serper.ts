@@ -10,7 +10,7 @@ interface SerperResponse {
   news?: SerperResult[];
 }
 
-export async function searchSerper(companyName: string): Promise<SerperResult[]> {
+export async function searchSerper(companyName: string, keywords: string[] = []): Promise<SerperResult[]> {
   const apiKey = process.env.SERPER_API_KEY;
   if (!apiKey) return [];
 
@@ -22,7 +22,9 @@ export async function searchSerper(companyName: string): Promise<SerperResult[]>
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        q: `"${companyName}" news OR announcement OR funding OR hiring`,
+        q: keywords.length > 0
+          ? `"${companyName}" ${keywords.join(" OR ")} news OR announcement`
+          : `"${companyName}" news OR announcement OR funding OR hiring`,
         num: 5,
       }),
     });

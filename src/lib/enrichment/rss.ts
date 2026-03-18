@@ -4,9 +4,12 @@ interface RssItem {
   pubDate: string;
 }
 
-export async function fetchNewsRss(companyName: string): Promise<RssItem[]> {
+export async function fetchNewsRss(companyName: string, keywords: string[] = []): Promise<RssItem[]> {
   try {
-    const query = encodeURIComponent(companyName);
+    const queryStr = keywords.length > 0
+      ? `${companyName} ${keywords.join(" ")}`
+      : companyName;
+    const query = encodeURIComponent(queryStr);
     const url = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
 
     const response = await fetch(url);
