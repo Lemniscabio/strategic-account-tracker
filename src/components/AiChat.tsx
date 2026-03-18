@@ -29,21 +29,14 @@ function cleanCitations(text: string): string {
 }
 
 /**
- * Extract sources JSON and clean text from response.
+ * Parse sources JSON from SOURCES: marker.
  */
-function extractSources(text: string): { cleanText: string; sources: { title: string; url: string }[] } {
-  const sourcesIdx = text.lastIndexOf("\nSOURCES:");
-  if (sourcesIdx === -1) {
-    return { cleanText: cleanCitations(text), sources: [] };
-  }
-
-  const cleanText = cleanCitations(text.slice(0, sourcesIdx));
-  const sourcesJson = text.slice(sourcesIdx + 9); // length of "\nSOURCES:"
+function parseSources(json: string): { title: string; url: string }[] {
   try {
-    const sources = JSON.parse(sourcesJson);
-    return { cleanText, sources: Array.isArray(sources) ? sources : [] };
+    const sources = JSON.parse(json);
+    return Array.isArray(sources) ? sources : [];
   } catch {
-    return { cleanText, sources: [] };
+    return [];
   }
 }
 
@@ -102,6 +95,7 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let fullText = "";
+      let sources: { title: string; url: string }[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -118,15 +112,17 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
             fullText += "\n\n⚠️ " + data.slice(8);
             break;
           }
+          // Handle SOURCES marker separately
+          if (data.startsWith("SOURCES:")) {
+            sources = parseSources(data.slice(8));
+            continue;
+          }
           fullText += data;
         }
 
-        // Parse sources during streaming (will be complete at end)
-        const { cleanText, sources } = extractSources(fullText);
-
         setMessages((prev) => {
           const updated = [...prev];
-          updated[updated.length - 1] = { role: "model", content: cleanText, sources };
+          updated[updated.length - 1] = { role: "model", content: cleanCitations(fullText), sources };
           return updated;
         });
       }

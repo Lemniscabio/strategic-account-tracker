@@ -71,6 +71,11 @@ export async function generateStreamWithSearch(
   const sources: GroundingSource[] = [];
 
   // Extract grounding sources from the response
+  // Log full grounding metadata to debug what's available
+  // Debug: log grounding metadata
+  const metadata = result.candidates?.[0]?.groundingMetadata;
+  console.log("[Chat] Grounding chunks:", metadata?.groundingChunks?.length ?? 0);
+
   if (result.candidates) {
     for (const candidate of result.candidates) {
       const metadata = candidate.groundingMetadata;
@@ -86,6 +91,7 @@ export async function generateStreamWithSearch(
     }
   }
 
+  console.log("[Chat] Sources extracted:", sources.length, sources.map(s => s.title));
   const fullText = result.text || "";
 
   // Simulate streaming by yielding text in chunks
@@ -97,9 +103,9 @@ export async function generateStreamWithSearch(
       // Small delay for streaming feel (only in chunks, not blocking)
     }
 
-    // Yield sources at the end
+    // Yield sources as a separate marker (no leading newline to avoid SSE break)
     if (sources.length > 0) {
-      yield `\nSOURCES:${JSON.stringify(sources)}`;
+      yield `SOURCES:${JSON.stringify(sources)}`;
     }
   }
 
