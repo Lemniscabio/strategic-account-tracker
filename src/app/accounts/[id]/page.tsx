@@ -8,6 +8,9 @@ import SignalTimeline from "@/components/SignalTimeline";
 import SignalForm from "@/components/SignalForm";
 import AccountForm from "@/components/AccountForm";
 import Toast from "@/components/Toast";
+import KeywordChips from "@/components/KeywordChips";
+import AiChatButton from "@/components/AiChatButton";
+import AiChat from "@/components/AiChat";
 import { AccountType, Stage } from "@/lib/constants";
 
 interface Account {
@@ -22,6 +25,7 @@ interface Account {
   nextAction?: string;
   nextActionDate?: string;
   lastTouchpoint?: string;
+  keywords?: string[];
 }
 
 interface Signal {
@@ -33,6 +37,8 @@ interface Signal {
   url?: string;
   status: string;
   date: string;
+  relevanceScore?: number;
+  scoreReason?: string;
 }
 
 export default function AccountDetailPage() {
@@ -44,6 +50,7 @@ export default function AccountDetailPage() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [showSignalForm, setShowSignalForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
@@ -93,13 +100,58 @@ export default function AccountDetailPage() {
       const res = await fetch(`/api/accounts/${id}/enrich`, { method: "POST" });
       const data = await res.json();
       if (data.newSignals > 0) {
-        setToast({ message: `Found ${data.newSignals} new signal(s)`, type: "success" });
+        setToast({
+          message: `Found ${data.newSignals} signal(s), scored ${data.scored}, dismissed ${data.dismissed}`,
+          type: "success",
+        });
       } else {
         setToast({ message: "No new signals found", type: "info" });
       }
       fetchSignals();
     } catch {
       setToast({ message: "Enrichment unavailable", type: "error" });
+    }
+    setEnriching(false);
+  };
+
+  const handleAddKeyword = async (keyword: string) => {
+    if (!account) return;
+    const existing = account.keywords || [];
+    if (existing.includes(keyword)) return;
+    const updated = [...existing, keyword];
+    await fetch(`/api/accounts/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keywords: updated }),
+    });
+    await fetchAccount();
+    handleEnrich();
+  };
+
+  const handleRemoveKeyword = async (keyword: string) => {
+    if (!account) return;
+    const updated = (account.keywords || []).filter((k) => k !== keyword);
+    await fetch(`/api/accounts/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keywords: updated }),
+    });
+    fetchAccount();
+  };
+
+  const handleRescore = async () => {
+    setEnriching(true);
+    try {
+      const res = await fetch(`/api/accounts/${id}/score`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rescore: true }),
+      });
+      const data = await res.json();
+      setToast({ message: `Re-scored ${data.scored} signal(s), dismissed ${data.dismissed}`, type: "success" });
+      fetchSignals();
+    } catch {
+      setToast({ message: "Scoring failed", type: "error" });
     }
     setEnriching(false);
   };
@@ -121,6 +173,7 @@ export default function AccountDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <AiChatButton onClick={() => setShowChat(true)} />
           <button
             onClick={() => setShowEditForm(true)}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -132,7 +185,14 @@ export default function AccountDetailPage() {
             disabled={enriching}
             className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 disabled:opacity-50"
           >
-            {enriching ? "Refreshing..." : "Refresh Signals"}
+            {enriching ? "Refreshing & Scoring..." : "Refresh Signals"}
+          </button>
+          <button
+            onClick={handleRescore}
+            disabled={enriching}
+            className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+          >
+            Re-score
           </button>
           <button
             onClick={async () => {
@@ -162,6 +222,12 @@ export default function AccountDetailPage() {
               <div className="mt-2 text-sm text-gray-300">{account.founderNote}</div>
             </div>
           )}
+
+          <KeywordChips
+            keywords={account.keywords || []}
+            onAdd={handleAddKeyword}
+            onRemove={handleRemoveKeyword}
+          />
 
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg bg-gray-900 p-4">
@@ -231,6 +297,28 @@ export default function AccountDetailPage() {
           account={account}
           onClose={() => setShowEditForm(false)}
           onSaved={() => { setShowEditForm(false); fetchAccount(); }}
+        />
+      )}
+
+      {/* AI Chat */}
+      {showChat && (
+        <AiChat
+          accountId={id}
+          onClose={() => setShowChat(false)}
+          onKeywordsAccepted={async (newKeywords) => {
+            if (!account) return;
+            const existing = account.keywords || [];
+            const unique = newKeywords.filter((kw) => !existing.includes(kw));
+            if (unique.length === 0) return;
+            const updated = [...existing, ...unique];
+            await fetch(`/api/accounts/${id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ keywords: updated }),
+            });
+            await fetchAccount();
+            handleEnrich();
+          }}
         />
       )}
 

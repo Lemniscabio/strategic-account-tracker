@@ -9,6 +9,8 @@ interface Signal {
   url?: string;
   status: string;
   date: string;
+  relevanceScore?: number;
+  scoreReason?: string;
 }
 
 interface Props {
@@ -35,6 +37,20 @@ export default function SignalTimeline({ signals, onConfirm, onDismiss, onDelete
                 <span className={signal.status === "Confirmed" ? "text-green-400" : "text-yellow-400"}>
                   {signal.status}
                 </span>
+                {signal.relevanceScore != null && (
+                  <span
+                    className={`ml-2 inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-bold ${
+                      signal.relevanceScore >= 4
+                        ? "bg-green-900/50 text-green-400"
+                        : signal.relevanceScore >= 3
+                          ? "bg-blue-900/50 text-blue-400"
+                          : "bg-gray-800 text-gray-500"
+                    }`}
+                    title={signal.scoreReason || ""}
+                  >
+                    {signal.relevanceScore}/5
+                  </span>
+                )}
               </div>
               <div className="mt-1 text-sm text-white">
                 {signal.url ? (
