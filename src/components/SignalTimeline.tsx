@@ -11,6 +11,7 @@ interface Signal {
   date: string;
   relevanceScore?: number;
   scoreReason?: string;
+  snippet?: string;
 }
 
 interface Props {
@@ -64,6 +65,9 @@ export default function SignalTimeline({ signals, onConfirm, onDismiss, onDelete
               <div className="mt-0.5 text-xs text-gray-500">
                 Type: {signal.type} · Source: {signal.source}
               </div>
+              {signal.snippet && (
+                <div className="mt-1 text-xs text-gray-500 line-clamp-2">{signal.snippet}</div>
+              )}
               {signal.note && <div className="mt-1 text-xs text-gray-400">{signal.note}</div>}
             </div>
             <div className="flex items-center gap-1 ml-2">

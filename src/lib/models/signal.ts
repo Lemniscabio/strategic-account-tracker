@@ -10,6 +10,7 @@ export interface ISignal extends Document {
   url?: string;
   status: SignalStatus;
   date: Date;
+  snippet?: string;
   relevanceScore?: number;
   scoreReason?: string;
   createdAt: Date;
@@ -25,6 +26,7 @@ const SignalSchema = new Schema<ISignal>(
     url: { type: String },
     status: { type: String, enum: SIGNAL_STATUSES, required: true },
     date: { type: Date, required: true },
+    snippet: { type: String },
     relevanceScore: { type: Number, min: 1, max: 5 },
     scoreReason: { type: String },
   },

@@ -14,7 +14,8 @@ function buildSystemPrompt(account: Record<string, unknown>, signals: Record<str
       const score = s.relevanceScore ? `[${s.relevanceScore}/5]` : "[unscored]";
       const reason = s.scoreReason ? ` — ${s.scoreReason}` : "";
       const url = s.url ? ` | URL: ${s.url}` : "";
-      return `${score} ${s.title} (${s.type}, ${s.source}, ${new Date(s.date as string).toLocaleDateString()})${reason}${url}`;
+      const snippet = s.snippet ? `\n  Content: ${(s.snippet as string).slice(0, 200)}` : "";
+      return `${score} ${s.title} (${s.type}, ${s.source}, ${new Date(s.date as string).toLocaleDateString()})${reason}${url}${snippet}`;
     })
     .join("\n");
 

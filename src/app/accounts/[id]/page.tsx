@@ -39,6 +39,7 @@ interface Signal {
   date: string;
   relevanceScore?: number;
   scoreReason?: string;
+  snippet?: string;
 }
 
 export default function AccountDetailPage() {

@@ -27,7 +27,7 @@ export const SIGNAL_TYPES = [
 ] as const;
 export type SignalType = (typeof SIGNAL_TYPES)[number];
 
-export const SIGNAL_SOURCES = ["Manual", "Serper", "RSS"] as const;
+export const SIGNAL_SOURCES = ["Manual", "Serper", "RSS", "Tavily"] as const;
 export type SignalSource = (typeof SIGNAL_SOURCES)[number];
 
 export const SIGNAL_STATUSES = ["Confirmed", "Suggested", "Dismissed"] as const;

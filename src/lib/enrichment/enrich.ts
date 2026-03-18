@@ -3,13 +3,15 @@ import dbConnect from "../mongodb";
 import Signal from "../models/signal";
 import { searchSerper } from "./serper";
 import { fetchNewsRss } from "./rss";
+import { searchTavily } from "./tavily";
 import { categorizeSignal } from "./categorize";
 
 interface RawSignal {
   title: string;
   url: string;
+  snippet: string;
   date: string;
-  source: "Serper" | "RSS";
+  source: "Serper" | "RSS" | "Tavily";
 }
 
 function dedup(signals: RawSignal[]): RawSignal[] {
@@ -23,6 +25,11 @@ function dedup(signals: RawSignal[]): RawSignal[] {
     for (const existing of Array.from(seen.values())) {
       const existingLower = existing.title.toLowerCase();
       if (lowerTitle.includes(existingLower) || existingLower.includes(lowerTitle)) {
+        // Keep the one with a snippet if the other doesn't have one
+        if (!existing.snippet && signal.snippet) {
+          seen.delete(existing.url || existing.title);
+          break;
+        }
         isDup = true;
         break;
       }
@@ -38,21 +45,33 @@ function dedup(signals: RawSignal[]): RawSignal[] {
 export async function enrichAccount(accountId: string, companyName: string, keywords: string[] = []): Promise<number> {
   await dbConnect();
 
-  const [serperResults, rssResults] = await Promise.all([
+  // Fetch from all three sources in parallel
+  const [serperResults, rssResults, tavilyResults] = await Promise.all([
     searchSerper(companyName, keywords),
     fetchNewsRss(companyName, keywords),
+    searchTavily(companyName, keywords),
   ]);
 
   const rawSignals: RawSignal[] = [
+    // Tavily first — they have snippets, so they win in dedup
+    ...tavilyResults.map((r) => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.snippet,
+      date: r.date,
+      source: "Tavily" as const,
+    })),
     ...serperResults.map((r) => ({
       title: r.title,
       url: r.link,
+      snippet: r.snippet || "",
       date: r.date || new Date().toISOString(),
       source: "Serper" as const,
     })),
     ...rssResults.map((r) => ({
       title: r.title,
       url: r.link,
+      snippet: "",
       date: r.pubDate || new Date().toISOString(),
       source: "RSS" as const,
     })),
@@ -78,6 +97,7 @@ export async function enrichAccount(accountId: string, companyName: string, keyw
     source: s.source,
     title: s.title,
     url: s.url,
+    snippet: s.snippet || undefined,
     status: "Suggested",
     date: new Date(s.date),
   }));

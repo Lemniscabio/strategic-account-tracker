@@ -11,6 +11,7 @@ interface AccountContext {
 interface SignalInput {
   _id: string;
   title: string;
+  snippet: string;
   source: string;
   type: string;
   date: string;
@@ -26,10 +27,14 @@ const BATCH_SIZE = 20;
 
 function buildScoringPrompt(account: AccountContext, signals: SignalInput[]): string {
   const signalList = signals
-    .map((s, i) => `${i + 1}. [ID: ${s._id}] "${s.title}" (${s.type}, ${s.source}, ${new Date(s.date).toLocaleDateString()})`)
+    .map((s, i) => {
+      let entry = `${i + 1}. [ID: ${s._id}] "${s.title}" (${s.type}, ${s.source}, ${new Date(s.date).toLocaleDateString()})`;
+      if (s.snippet) entry += `\n   Content: ${s.snippet}`;
+      return entry;
+    })
     .join("\n");
 
-  return `Score each signal for relevance to this account tracked by a biomanufacturing/CDMO-focused investment firm.
+  return `Score each signal for relevance to this account tracked by a biomanufacturing/CDMO-focused investment firm. Use the content snippet (when available) to judge actual relevance — don't score based on title alone.
 
 Account: ${account.name} (${account.type}, stage: ${account.stage})
 Opportunity Hypothesis: ${account.opportunityHypothesis}

@@ -39,6 +39,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         unscoredSignals.map((s) => ({
           _id: s._id.toString(),
           title: s.title,
+          snippet: s.snippet || "",
           source: s.source,
           type: s.type,
           date: s.date.toISOString(),
