@@ -1,6 +1,9 @@
 export const ACCOUNT_TYPES = ["Customer", "Partner", "Investor", "Ecosystem"] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
+export const ACCOUNT_TIERS = ['A', 'B', 'C'] as const;
+export type AccountTier = (typeof ACCOUNT_TIERS)[number];
+
 export const STAGES = [
   "Identified",
   "Researching",
