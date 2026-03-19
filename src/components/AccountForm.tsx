@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ACCOUNT_TYPES, STAGES } from "@/lib/constants";
+import { ACCOUNT_TYPES, STAGES, ACCOUNT_TIERS } from "@/lib/constants";
 
 interface Props {
   account?: {
@@ -9,6 +9,7 @@ interface Props {
     name: string;
     type: string;
     stage: string;
+    tier?: string;
     website?: string;
     linkedinUrl?: string;
     opportunityHypothesis: string;
@@ -26,6 +27,7 @@ export default function AccountForm({ account, onClose, onSaved }: Props) {
     name: account?.name || "",
     type: account?.type || "Customer",
     stage: account?.stage || "Identified",
+    tier: account?.tier || "C",
     website: account?.website || "",
     linkedinUrl: account?.linkedinUrl || "",
     opportunityHypothesis: account?.opportunityHypothesis || "",
@@ -74,11 +76,17 @@ export default function AccountForm({ account, onClose, onSaved }: Props) {
             <label className={labelClass}>Company Name *</label>
             <input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className={labelClass}>Type *</label>
               <select className={inputClass} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Tier *</label>
+              <select className={inputClass} value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>
+                {ACCOUNT_TIERS.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>

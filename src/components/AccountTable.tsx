@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AccountType, Stage } from "@/lib/constants";
+import { AccountType, Stage, AccountTier } from "@/lib/constants";
 import StageBadge from "./StageBadge";
 import TypeBadge from "./TypeBadge";
+import TierBadge from "./TierBadge";
 import AccountFilters from "./AccountFilters";
 
 interface AccountRow {
@@ -12,6 +13,7 @@ interface AccountRow {
   name: string;
   type: AccountType;
   stage: Stage;
+  tier?: AccountTier;
   nextAction?: string;
   nextActionDate?: string;
   latestSignal?: { title: string; date: string } | null;
@@ -23,6 +25,7 @@ export default function AccountTable() {
   const [search, setSearch] = useState("");
   const [type, setType] = useState("");
   const [stage, setStage] = useState("");
+  const [tier, setTier] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,6 +33,7 @@ export default function AccountTable() {
     if (search) params.set("search", search);
     if (type) params.set("type", type);
     if (stage) params.set("stage", stage);
+    if (tier) params.set("tier", tier);
 
     setLoading(true);
     fetch(`/api/accounts?${params}`)
@@ -39,7 +43,7 @@ export default function AccountTable() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [search, type, stage]);
+  }, [search, type, stage, tier]);
 
   return (
     <div className="space-y-4">
@@ -50,6 +54,8 @@ export default function AccountTable() {
         onSearchChange={setSearch}
         onTypeChange={setType}
         onStageChange={setStage}
+        tier={tier}
+        onTierChange={setTier}
       />
 
       {loading ? (
@@ -64,6 +70,7 @@ export default function AccountTable() {
             <thead>
               <tr className="border-b border-gray-800 bg-gray-900/50 text-left text-xs text-gray-500">
                 <th className="px-4 py-3">Account</th>
+                <th className="px-4 py-3">Tier</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Stage</th>
                 <th className="px-4 py-3">Latest Signal</th>
@@ -78,6 +85,9 @@ export default function AccountTable() {
                   className="cursor-pointer border-b border-gray-800/50 hover:bg-gray-900/30"
                 >
                   <td className="px-4 py-3 font-medium text-blue-400">{account.name}</td>
+                  <td className="px-4 py-3">
+                    <TierBadge tier={account.tier || "C"} />
+                  </td>
                   <td className="px-4 py-3">
                     <TypeBadge type={account.type} />
                   </td>

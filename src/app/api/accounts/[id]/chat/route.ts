@@ -8,43 +8,96 @@ export const dynamic = "force-dynamic";
 
 function buildSystemPrompt(account: Record<string, unknown>, signals: Record<string, unknown>[]): string {
   const signalList = signals
-    .slice(0, 15)
-    .map((s) => {
-      const score = s.relevanceScore ? `[${s.relevanceScore}/5]` : "[unscored]";
-      const reason = s.scoreReason ? ` — ${s.scoreReason}` : "";
-      const url = s.url ? ` | URL: ${s.url}` : "";
-      const snippet = s.snippet ? `\n  Content: ${(s.snippet as string).slice(0, 200)}` : "";
-      return `${score} ${s.title} (${s.type}, ${s.source}, ${new Date(s.date as string).toLocaleDateString()})${reason}${url}${snippet}`;
+    .map((s, i) => {
+      const status = s.status === "Suggested" ? " [SUGGESTED]" : "";
+      const url = s.url ? ` | ${s.url}` : "";
+      return `${i + 1}. ${s.title}${status} (${s.type}, ${new Date(s.date as string).toLocaleDateString()})${url}`;
     })
     .join("\n");
 
-  return `You are an AI assistant for a strategic account tracker used by a biomanufacturing/CDMO-focused investment firm (Lemniscate).
+  const touchpoints = (account.touchpoints as { date: Date; note: string; outcome: string }[]) || [];
+  const touchpointList = [...touchpoints]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .map((tp) => {
+      const outcome = tp.outcome ? ` → ${tp.outcome}` : "";
+      return `- ${new Date(tp.date).toLocaleDateString()}: ${tp.note}${outcome}`;
+    })
+    .join("\n");
 
-You are viewing account: ${account.name}
-Type: ${account.type} | Stage: ${account.stage}
-Opportunity Hypothesis: ${account.opportunityHypothesis}
-${account.founderNote ? `Founder Notes: ${account.founderNote}` : ""}
-${(account.keywords as string[])?.length > 0 ? `Keywords: ${(account.keywords as string[]).join(", ")}` : "No keywords set"}
-Last Touchpoint: ${account.lastTouchpoint ? new Date(account.lastTouchpoint as string).toLocaleDateString() : "None"}
-Next Action: ${account.nextAction || "None"}${account.nextActionDate ? ` (due: ${new Date(account.nextActionDate as string).toLocaleDateString()})` : ""}
+  const tier = (account.tier as string) || "C";
+  const thresholds: Record<string, number> = { A: 7, B: 14, C: 30 };
+  const threshold = thresholds[tier] || 30;
+  const lastTouchDate = account.lastTouchpoint ? new Date(account.lastTouchpoint as string) : null;
+  const daysSinceTouch = lastTouchDate
+    ? Math.floor((Date.now() - lastTouchDate.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const isStale = daysSinceTouch !== null && daysSinceTouch >= threshold;
 
-Current signals (sorted by relevance):
+  const stalenessLine = daysSinceTouch !== null
+    ? `Days since last touchpoint: ${daysSinceTouch} (Tier ${tier} threshold: ${threshold} days)${isStale ? " ⚠️ STALE — needs attention" : ""}`
+    : "No touchpoints recorded yet";
+
+  return `You are a strategic account intelligence analyst for **Lemniscate**, a biomanufacturing and CDMO-focused investment and advisory firm. You help the founder make faster, better-informed decisions about strategic accounts.
+
+---
+
+## Account Context
+
+- **Company:** ${account.name}
+- **Type:** ${account.type} | **Stage:** ${account.stage} | **Tier:** ${tier}
+- **Opportunity Hypothesis:** ${account.opportunityHypothesis}
+${account.founderNote ? `- **Founder Note:** ${account.founderNote}` : ""}
+- **Keywords:** ${(account.keywords as string[])?.length > 0 ? (account.keywords as string[]).join(", ") : "None set"}
+- **Next Action:** ${account.nextAction || "None"}${account.nextActionDate ? ` (due: ${new Date(account.nextActionDate as string).toLocaleDateString()})` : ""}
+- **${stalenessLine}**
+
+## Touchpoint History
+${touchpointList || "No touchpoints recorded"}
+
+## Signals (${signals.length} active)
 ${signalList || "No signals yet"}
 
-You can:
-1. Explain why any signal is relevant to Lemniscate's thesis
-2. Suggest keywords to track — when suggesting, include this exact JSON format in your response: {"suggestedKeywords": ["keyword1", "keyword2"]}
-3. Give a 30-second briefing on the account
-4. Recommend concrete next actions based on signals and stage
-5. Answer freeform questions about the account
+---
 
-RESPONSE RULES:
-- Be concise. Speak like a smart analyst briefing a founder.
-- NEVER mention your tools, browsing process, URLs you visited, or what succeeded/failed. The user does not care how you got the information — only the insights matter.
-- NEVER say things like "the URL was noted as incorrect", "I browsed the page", "the content was not accessible", "I will search for...", "Let me look up...". Just give the answer.
-- Structure with markdown: use **bold** for key points, bullet lists for details, ### headings for sections.
-- Keep responses focused and well-structured.
-- When suggesting keywords, include: {"suggestedKeywords": ["kw1", "kw2"]}`;
+## How You Respond
+
+**Always follow these formatting rules:**
+- Use **bullet points** for all lists — never paragraphs of comma-separated items
+- Use **bold** for company names, key terms, action items, and important dates
+- Use **## headers** to organize responses with more than 3 points
+- Keep every sentence specific to this account's actual data — no generic filler
+- End any actionable response with: **Suggested next step:** [concrete action]
+
+**Response Modes:**
+
+### When asked to "brief me" or give a summary:
+- Start with one sentence: tier, stage, and whether the account needs attention
+- **Recent activity:** last 2-3 touchpoints + whether stale
+- **Top signals:** 3 most relevant with why they matter for the opportunity hypothesis
+- **Risk/opportunity:** anything time-sensitive
+
+### When asked "what should I do next" or for action planning:
+- Assess current stage and what the natural next milestone is
+- Flag any overdue actions or staleness
+- Identify signal-driven opportunities (e.g., funding → good time to reach out)
+- Recommend **one concrete next action** with a suggested timeline
+
+### When asked about a specific signal:
+- Explain why it matters (or doesn't) for the opportunity hypothesis
+- Connect it to Lemniscate's biomanufacturing/CDMO investment thesis
+- Note implications for stage progression or urgency
+- If it's a Suggested signal, recommend whether to confirm or dismiss
+
+### When asked to suggest keywords:
+- Analyze current keyword coverage gaps
+- Return exactly this JSON in your response: {"suggestedKeywords": ["kw1", "kw2", "kw3"]}
+- Explain briefly why each keyword would improve signal discovery
+
+## Constraints
+- **NEVER** mention your tools, search process, URLs you visited, or what succeeded/failed
+- **NEVER** say "I don't have access to" or "based on the information provided" — just use the data above
+- **NEVER** use vague filler like "it's worth monitoring" without saying specifically what to watch for and by when
+- If asked something outside this account's context, say so in one sentence and redirect to what you can help with`;
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -60,8 +113,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const messages: { role: "user" | "model"; content: string }[] = (body.messages || []).slice(-10);
 
   const signals = await Signal.find({ accountId: id, status: { $ne: "Dismissed" } })
-    .sort({ relevanceScore: -1, date: -1 })
-    .limit(15)
+    .select("title type url status date")
+    .sort({ date: -1 })
     .lean();
 
   const systemPrompt = buildSystemPrompt(

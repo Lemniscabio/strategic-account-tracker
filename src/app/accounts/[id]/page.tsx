@@ -3,15 +3,18 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import StageBadge from "@/components/StageBadge";
+import TierBadge from "@/components/TierBadge";
 import TypeBadge from "@/components/TypeBadge";
 import SignalTimeline from "@/components/SignalTimeline";
 import SignalForm from "@/components/SignalForm";
+import TouchpointForm from "@/components/TouchpointForm";
+import TouchpointTimeline from "@/components/TouchpointTimeline";
 import AccountForm from "@/components/AccountForm";
 import Toast from "@/components/Toast";
 import KeywordChips from "@/components/KeywordChips";
 import AiChatButton from "@/components/AiChatButton";
 import AiChat from "@/components/AiChat";
-import { AccountType, Stage } from "@/lib/constants";
+import { AccountType, AccountTier, Stage } from "@/lib/constants";
 
 interface Account {
   _id: string;
@@ -25,6 +28,8 @@ interface Account {
   nextAction?: string;
   nextActionDate?: string;
   lastTouchpoint?: string;
+  tier: AccountTier;
+  touchpoints?: { date: string; note: string; outcome: string }[];
   keywords?: string[];
 }
 
@@ -51,6 +56,7 @@ export default function AccountDetailPage() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [showSignalForm, setShowSignalForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
+  const [showTouchpointForm, setShowTouchpointForm] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
@@ -171,6 +177,7 @@ export default function AccountDetailPage() {
           <div className="mt-2 flex gap-2">
             <TypeBadge type={account.type} />
             <StageBadge stage={account.stage} />
+            <TierBadge tier={account.tier || "C"} />
           </div>
         </div>
         <div className="flex gap-2">
@@ -241,12 +248,16 @@ export default function AccountDetailPage() {
               )}
             </div>
             <div className="rounded-lg bg-gray-900 p-4">
-              <div className="text-xs font-medium text-gray-500">LAST TOUCHPOINT</div>
-              <div className="mt-2 text-sm text-gray-300">
-                {account.lastTouchpoint
-                  ? new Date(account.lastTouchpoint).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                  : "—"}
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-xs font-medium text-gray-500">TOUCHPOINTS</div>
+                <button
+                  onClick={() => setShowTouchpointForm(true)}
+                  className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  + Add
+                </button>
               </div>
+              <TouchpointTimeline touchpoints={account.touchpoints || []} />
             </div>
           </div>
 
@@ -291,6 +302,13 @@ export default function AccountDetailPage() {
           accountId={id}
           onClose={() => setShowSignalForm(false)}
           onSaved={() => { setShowSignalForm(false); fetchSignals(); fetchAccount(); }}
+        />
+      )}
+      {showTouchpointForm && (
+        <TouchpointForm
+          accountId={id}
+          onClose={() => setShowTouchpointForm(false)}
+          onSaved={() => { setShowTouchpointForm(false); fetchAccount(); }}
         />
       )}
       {showEditForm && (

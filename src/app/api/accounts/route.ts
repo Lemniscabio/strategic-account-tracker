@@ -17,9 +17,11 @@ export async function GET(request: NextRequest) {
   if (search) filter.name = { $regex: search, $options: "i" };
   if (type) filter.type = type;
   if (stage) filter.stage = stage;
+  const tier = searchParams.get("tier");
+  if (tier) filter.tier = tier;
 
   const accounts = await Account.find(filter)
-    .sort({ nextActionDate: 1 })
+    .sort({ tier: 1, nextActionDate: 1 })
     .lean();
 
   // Attach latest confirmed signal to each account
@@ -37,8 +39,11 @@ export async function GET(request: NextRequest) {
     latestSignal: signalMap.get(account._id.toString()) || null,
   }));
 
-  // Sort: accounts with nextActionDate first (ascending), then those without
+  // Sort: tier first (A before B before C), then by nextActionDate
   result.sort((a, b) => {
+    const tierA = (a.tier || "C") as string;
+    const tierB = (b.tier || "C") as string;
+    if (tierA !== tierB) return tierA.localeCompare(tierB);
     if (a.nextActionDate && b.nextActionDate) {
       return new Date(a.nextActionDate).getTime() - new Date(b.nextActionDate).getTime();
     }
@@ -53,6 +58,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   await dbConnect();
   const body = await request.json();
+
+  const now = new Date();
+  body.touchpoints = [{ date: now, note: "Started tracking", outcome: "" }];
+  body.lastTouchpoint = now;
+
   const account = await Account.create(body);
   return NextResponse.json(account, { status: 201 });
 }

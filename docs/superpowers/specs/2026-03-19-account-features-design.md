@@ -142,7 +142,7 @@ Update `src/app/page.tsx` to include `<FocusView />` between `<KpiCards />` and 
 The prompt now receives:
 - Account: name, type, stage, **tier**, hypothesis, founder note, keywords
 - **Full touchpoint timeline** (all entries, not just lastTouchpoint date)
-- Top 15 confirmed signals with scores
+- **All non-dismissed signals** (title, URL, status — includes both Suggested and Confirmed so user can discuss and act on any active signal)
 - **Staleness status**: days since last touchpoint, tier threshold, whether stale
 
 ### Prompt Structure
