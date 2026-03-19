@@ -30,6 +30,70 @@ function cleanCitations(text: string): string {
     .trim();
 }
 
+/** Post-process AI response to ensure proper markdown formatting */
+function ensureMarkdown(text: string): string {
+  // Known section headers that Gemini outputs as plain text
+  const sectionHeaders = [
+    "Status", "Recent Activity", "Top Signals", "Top Signal",
+    "Risk", "Risk/Opportunity", "Risks", "Opportunity",
+    "Suggested Actions", "Action Plan", "Next Steps",
+    "Signal Analysis", "Summary", "Overview", "Assessment",
+    "Touchpoint History", "Key Signals", "Recommendations",
+  ];
+
+  let result = text;
+
+  // Convert plain-text section headers to ## markdown headers
+  // Match lines that are just a header word/phrase (possibly with trailing colon)
+  for (const header of sectionHeaders) {
+    // Match header at start of line, optionally followed by colon, then newline
+    const pattern = new RegExp(`^(${header}):?\\s*$`, "gmi");
+    result = result.replace(pattern, `\n## $1\n`);
+  }
+
+  // Detect bullet-like patterns that Gemini outputs without dash prefix:
+  // Lines starting with bold text followed by colon are likely list items
+  // e.g., "**Merger completed:** Some text" → "- **Merger completed:** Some text"
+  result = result.replace(/^(\*\*[^*]+:\*\*\s)/gm, "- $1");
+
+  // Also handle bold without asterisks at line start followed by colon
+  // e.g., "Merger completed: Some text" when it looks like a list item
+  // Only do this inside sections (after a ## header)
+  const lines = result.split("\n");
+  let inSection = false;
+  const processed: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith("## ")) {
+      inSection = true;
+      processed.push(line);
+    } else if (inSection && line.match(/^[A-Z][^.!?\n]{2,30}:\s/) && !line.startsWith("-") && !line.startsWith("#")) {
+      // Looks like a label: description pattern — convert to bullet with bold label
+      const colonIdx = line.indexOf(":");
+      const label = line.slice(0, colonIdx);
+      const rest = line.slice(colonIdx);
+      processed.push(`- **${label}**${rest}`);
+    } else {
+      processed.push(line);
+    }
+  }
+
+  result = processed.join("\n");
+
+  // Ensure blank lines around headers
+  result = result.replace(/([^\n])\n(## )/g, "$1\n\n$2");
+  result = result.replace(/(## [^\n]+)\n([^\n])/g, "$1\n\n$2");
+
+  // Ensure suggested next step stands out
+  result = result.replace(/^(\*\*Suggested next step:\*\*)/gm, "\n---\n\n$1");
+
+  // Clean up excessive blank lines
+  result = result.replace(/\n{3,}/g, "\n\n");
+
+  return result.trim();
+}
+
 function parseSuggestedKeywords(text: string): string[] | null {
   const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "");
   const match = cleaned.match(/\{"suggestedKeywords"\s*:\s*\[[\s\S]*?\]\}/);
@@ -81,7 +145,7 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
 
       setMessages([...newMessages, {
         role: "model",
-        content: cleanCitations(data.text || "No response received."),
+        content: ensureMarkdown(cleanCitations(data.text || "No response received.")),
         sources: data.sources || [],
       }]);
     } catch {
