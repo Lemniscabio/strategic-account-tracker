@@ -13,7 +13,11 @@ Add `tier` field to Account model:
 - Required, default: `'C'`
 
 ### Constants
-Add `ACCOUNT_TIERS = ['A', 'B', 'C']` to `src/lib/constants.ts`.
+Add to `src/lib/constants.ts`:
+```ts
+export const ACCOUNT_TIERS = ['A', 'B', 'C'] as const;
+export type AccountTier = (typeof ACCOUNT_TIERS)[number];
+```
 
 ### Account Form
 - Add tier select dropdown to `AccountForm.tsx` (between Type and Stage fields)
@@ -31,6 +35,11 @@ Add `ACCOUNT_TIERS = ['A', 'B', 'C']` to `src/lib/constants.ts`.
 
 ### Filters
 - Add tier filter to `AccountFilters.tsx`
+- Update `AccountTable.tsx` to manage `tier` filter state, pass it as prop to `AccountFilters`, and include it in the fetch URL query params
+- Handle `tier` query param in `GET /api/accounts` route
+
+### Sort Implementation
+Mongo sort: `{ tier: 1, nextActionDate: 1 }` — works naturally since A < B < C in ASCII order.
 
 ---
 
@@ -62,15 +71,16 @@ Set `lastTouchpoint` to the same date.
 - Each entry: date (bold), note, outcome (if present, in muted text)
 
 ### API Changes
-- `POST /api/accounts/[id]/touchpoints` — add a touchpoint, auto-update `lastTouchpoint`
+- Create new file: `src/app/api/accounts/[id]/touchpoints/route.ts`
+  - `POST` — add a touchpoint, auto-update `lastTouchpoint` to max date in array
 - Touchpoints returned as part of `GET /api/accounts/[id]` response (already embedded)
 
-### Component
+### New Components (in `src/components/`)
 - `TouchpointForm.tsx` — modal for adding a touchpoint (date, note, outcome)
 - `TouchpointTimeline.tsx` — vertical timeline display
 
-### Remove
-- Remove the manual `lastTouchpoint` date input from `AccountForm.tsx` (it's now auto-derived)
+### Note
+`lastTouchpoint` is not currently in `AccountForm.tsx` — it is display-only on the detail page. No form removal needed. The field is now auto-derived from the touchpoints array.
 
 ---
 
@@ -99,6 +109,10 @@ Returns three buckets:
 - Excludes accounts with stage "Churned"
 - Returns: account name, tier, days since last touchpoint, last touchpoint note
 - Sorted by: staleness ratio DESC (days / threshold)
+
+### New Files
+- `src/app/api/dashboard/focus/route.ts` — API endpoint
+- `src/components/FocusView.tsx` — frontend component
 
 ### Frontend Component
 `FocusView.tsx` — collapsible section at top of dashboard (between KPI cards and account table).
@@ -179,3 +193,6 @@ The prompt now receives:
 - Existing accounts without `touchpoints` array get empty array via schema default
 - The `lastTouchpoint` field is preserved for backward-compatible queries (focus view staleness, dashboard)
 - Mockup reference: `mockup-focus-view.html` (to be deleted after implementation)
+- Accounts with no `lastTouchpoint` and no touchpoints are excluded from staleness checks (they have no baseline to measure against)
+- The `GET /api/dashboard/stats` endpoint remains unchanged — it coexists with the new `/api/dashboard/focus` endpoint (different purposes: counts vs actionable items)
+- Chat `buildSystemPrompt` must iterate over the touchpoints array and compute staleness (days since last touchpoint vs tier threshold)
