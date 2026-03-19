@@ -3,10 +3,15 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 
+interface Source {
+  title: string;
+  url: string;
+}
+
 interface Message {
   role: "user" | "model";
   content: string;
-  sources?: { title: string; url: string }[];
+  sources?: Source[];
 }
 
 interface Props {
@@ -15,9 +20,6 @@ interface Props {
   onKeywordsAccepted: (keywords: string[]) => void;
 }
 
-/**
- * Clean Gemini grounding citation markers from response text.
- */
 function cleanCitations(text: string): string {
   return text
     .replace(/\s*\[cite:\s*[^\]]*\]/g, "")
@@ -26,18 +28,6 @@ function cleanCitations(text: string): string {
     .replace(/  +/g, " ")
     .replace(/\n\s*\n\s*\n/g, "\n\n")
     .trim();
-}
-
-/**
- * Parse sources JSON from SOURCES: marker.
- */
-function parseSources(json: string): { title: string; url: string }[] {
-  try {
-    const sources = JSON.parse(json);
-    return Array.isArray(sources) ? sources : [];
-  } catch {
-    return [];
-  }
 }
 
 function parseSuggestedKeywords(text: string): string[] | null {
@@ -58,12 +48,12 @@ function parseSuggestedKeywords(text: string): string[] | null {
 export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
+  const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, loading]);
 
   const quickActions = [
     "Brief me on this account",
@@ -72,16 +62,13 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
   ];
 
   const sendMessage = async (content: string) => {
-    if (!content.trim() || streaming) return;
+    if (!content.trim() || loading) return;
 
     const userMsg: Message = { role: "user", content };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
-    setStreaming(true);
-
-    const assistantMsg: Message = { role: "model", content: "" };
-    setMessages([...newMessages, assistantMsg]);
+    setLoading(true);
 
     try {
       const res = await fetch(`/api/accounts/${accountId}/chat`, {
@@ -92,10 +79,11 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
 
       if (!res.ok || !res.body) throw new Error("Chat request failed");
 
+      // Collect the full response before rendering
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let fullText = "";
-      let sources: { title: string; url: string }[] = [];
+      let sources: Source[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -107,37 +95,37 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const data = line.slice(6);
-          if (data === "[DONE]") break;
+          if (data === "[DONE]") continue;
           if (data.startsWith("[ERROR]")) {
-            fullText += "\n\n⚠️ " + data.slice(8);
-            break;
+            fullText += "\n\n" + data.slice(8);
+            continue;
           }
-          // Handle SOURCES marker separately
           if (data.startsWith("SOURCES:")) {
-            sources = parseSources(data.slice(8));
+            try {
+              const parsed = JSON.parse(data.slice(8));
+              if (Array.isArray(parsed)) sources = parsed;
+            } catch { /* ignore */ }
             continue;
           }
           fullText += data;
         }
-
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "model", content: cleanCitations(fullText), sources };
-          return updated;
-        });
       }
+
+      const cleanedText = cleanCitations(fullText);
+
+      setMessages([...newMessages, {
+        role: "model",
+        content: cleanedText,
+        sources,
+      }]);
     } catch {
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          role: "model",
-          content: "Sorry, I couldn't process that request. Please try again.",
-        };
-        return updated;
-      });
+      setMessages([...newMessages, {
+        role: "model",
+        content: "Sorry, something went wrong. Please try again.",
+      }]);
     }
 
-    setStreaming(false);
+    setLoading(false);
   };
 
   return (
@@ -150,21 +138,21 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
           </svg>
           <span className="text-sm font-bold text-white">AI Assistant</span>
         </div>
-        <button onClick={onClose} className="text-gray-500 hover:text-white">
+        <button onClick={onClose} className="text-gray-500 hover:text-white text-lg">
           ✕
         </button>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
+        {messages.length === 0 && !loading && (
           <div className="space-y-2">
             <p className="text-xs text-gray-500">Quick actions:</p>
             {quickActions.map((action) => (
               <button
                 key={action}
                 onClick={() => sendMessage(action)}
-                className="block w-full rounded-lg border border-gray-800 px-3 py-2 text-left text-sm text-gray-400 hover:border-purple-600 hover:text-white"
+                className="block w-full rounded-lg border border-gray-800 px-3 py-2 text-left text-sm text-gray-400 hover:border-purple-600 hover:text-white transition-colors"
               >
                 {action}
               </button>
@@ -173,73 +161,96 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
         )}
 
         {messages.map((msg, i) => (
-          <div key={i} className={`${msg.role === "user" ? "text-right" : ""}`}>
+          <div key={i} className={msg.role === "user" ? "flex justify-end" : ""}>
             <div
-              className={`inline-block max-w-[90%] rounded-lg px-3 py-2 text-sm ${
+              className={`rounded-lg px-3 py-2 text-sm ${
                 msg.role === "user"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-900 text-gray-300"
+                  ? "bg-blue-600 text-white max-w-[80%]"
+                  : "bg-gray-900 text-gray-300 w-full"
               }`}
             >
               {msg.role === "model" ? (
-                <div className="prose prose-sm prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-strong:text-white">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
+                <>
+                  {/* Markdown content */}
+                  <div className="prose prose-sm prose-invert max-w-none
+                    prose-p:my-1.5 prose-p:leading-relaxed
+                    prose-headings:my-2 prose-headings:text-white
+                    prose-h3:text-sm prose-h3:font-bold
+                    prose-ul:my-1.5 prose-ul:pl-4
+                    prose-ol:my-1.5 prose-ol:pl-4
+                    prose-li:my-0.5
+                    prose-strong:text-white prose-strong:font-semibold
+                    prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+
+                  {/* Sources */}
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="mt-3 border-t border-gray-800 pt-2">
+                      <div className="text-[10px] uppercase tracking-wider text-gray-600 mb-1.5">Sources</div>
+                      <div className="space-y-1">
+                        {msg.sources.map((src, j) => (
+                          <a
+                            key={j}
+                            href={src.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                          >
+                            <span className="shrink-0">↗</span>
+                            <span className="truncate">{src.title}</span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Keyword suggestions */}
+                  {(() => {
+                    const keywords = parseSuggestedKeywords(msg.content);
+                    if (!keywords) return null;
+                    return (
+                      <div className="mt-3 flex flex-wrap gap-1.5 border-t border-gray-800 pt-2">
+                        {keywords.map((kw) => (
+                          <button
+                            key={kw}
+                            onClick={() => onKeywordsAccepted([kw])}
+                            className="rounded-full bg-purple-900/40 px-2.5 py-1 text-xs text-purple-300 hover:bg-purple-800 transition-colors"
+                          >
+                            + {kw}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => onKeywordsAccepted(keywords)}
+                          className="rounded-full bg-purple-600 px-2.5 py-1 text-xs text-white hover:bg-purple-700 transition-colors"
+                        >
+                          Add all
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </>
               ) : (
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+                <div>{msg.content}</div>
               )}
-
-              {/* Sources */}
-              {msg.role === "model" && msg.sources && msg.sources.length > 0 && !streaming && (
-                <div className="mt-2 border-t border-gray-800 pt-2">
-                  <div className="text-xs text-gray-500 mb-1">Sources:</div>
-                  <div className="space-y-1">
-                    {msg.sources.map((src, j) => (
-                      <a
-                        key={j}
-                        href={src.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block text-xs text-blue-400 hover:text-blue-300 truncate"
-                      >
-                        🔗 {src.title}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Keyword suggestions */}
-              {msg.role === "model" && !streaming && (() => {
-                const keywords = parseSuggestedKeywords(msg.content);
-                if (!keywords) return null;
-                return (
-                  <div className="mt-2 flex flex-wrap gap-1 border-t border-gray-800 pt-2">
-                    {keywords.map((kw) => (
-                      <button
-                        key={kw}
-                        onClick={() => onKeywordsAccepted([kw])}
-                        className="rounded-full bg-purple-900/40 px-2 py-0.5 text-xs text-purple-300 hover:bg-purple-800"
-                      >
-                        + {kw}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => onKeywordsAccepted(keywords)}
-                      className="rounded-full bg-purple-600 px-2 py-0.5 text-xs text-white hover:bg-purple-700"
-                    >
-                      Add all
-                    </button>
-                  </div>
-                );
-              })()}
             </div>
           </div>
         ))}
 
-        {streaming && (
-          <div className="text-xs text-gray-600">Thinking...</div>
+        {/* Loading indicator */}
+        {loading && (
+          <div className="bg-gray-900 rounded-lg px-3 py-3 w-full">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <div className="flex gap-1">
+                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              </div>
+              Thinking...
+            </div>
+          </div>
         )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -252,13 +263,13 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && sendMessage(input)}
             placeholder="Ask about this account..."
-            disabled={streaming}
+            disabled={loading}
             className="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-600 outline-none focus:ring-1 focus:ring-purple-500 disabled:opacity-50"
           />
           <button
             onClick={() => sendMessage(input)}
-            disabled={!input.trim() || streaming}
-            className="rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+            disabled={!input.trim() || loading}
+            className="rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50 transition-colors"
           >
             Send
           </button>
