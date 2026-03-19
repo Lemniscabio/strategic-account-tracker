@@ -49,10 +49,6 @@ export async function generateChatResponse(
   const client = getClient();
 
   const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
-  if (systemPrompt) {
-    contents.push({ role: "user", parts: [{ text: systemPrompt }] });
-    contents.push({ role: "model", parts: [{ text: "Understood." }] });
-  }
   for (const msg of messages) {
     contents.push({
       role: msg.role === "user" ? "user" : "model",
@@ -64,6 +60,7 @@ export async function generateChatResponse(
     model: MODEL,
     contents,
     config: {
+      systemInstruction: systemPrompt,
       tools: [
         { googleSearch: {} },
         { urlContext: {} },
