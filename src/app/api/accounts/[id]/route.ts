@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import Account from "@/lib/models/account";
+import ChatThread from "@/lib/models/chatThread";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await dbConnect();
@@ -22,6 +23,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await dbConnect();
   const { id } = await params;
+  await ChatThread.deleteMany({ accountId: id });
   const account = await Account.findByIdAndDelete(id);
   if (!account) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });

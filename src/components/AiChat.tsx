@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 
 interface Source {
@@ -113,11 +113,55 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [threads, setThreads] = useState<{ _id: string; title: string; updatedAt: string }[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [showThreadList, setShowThreadList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  const fetchThreads = useCallback(async () => {
+    const res = await fetch(`/api/accounts/${accountId}/chats`);
+    if (res.ok) {
+      const data = await res.json();
+      setThreads(data);
+    }
+  }, [accountId]);
+
+  const loadThread = async (threadId: string) => {
+    const res = await fetch(`/api/accounts/${accountId}/chats/${threadId}`);
+    if (res.ok) {
+      const thread = await res.json();
+      setMessages(thread.messages.map((m: { role: string; content: string; sources?: { title: string; url: string }[] }) => ({
+        ...m,
+        content: m.role === "model" ? ensureMarkdown(cleanCitations(m.content)) : m.content,
+      })));
+      setActiveThreadId(threadId);
+      setShowThreadList(false);
+    }
+  };
+
+  const saveToThread = async (threadId: string, msgs: Message[]) => {
+    await fetch(`/api/accounts/${accountId}/chats/${threadId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: msgs.map((m) => ({ role: m.role, content: m.content, sources: m.sources || [] })),
+      }),
+    });
+  };
+
+  useEffect(() => {
+    fetchThreads().then(() => {});
+  }, [fetchThreads]);
+
+  useEffect(() => {
+    if (threads.length > 0 && !activeThreadId && messages.length === 0) {
+      loadThread(threads[0]._id);
+    }
+  }, [threads]);
 
   const quickActions = [
     "Brief me on this account",
@@ -143,11 +187,32 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
 
       const data = await res.json();
 
-      setMessages([...newMessages, {
+      const aiMsg: Message = {
         role: "model",
         content: ensureMarkdown(cleanCitations(data.text || "No response received.")),
         sources: data.sources || [],
-      }]);
+      };
+      const allMessages = [...newMessages, aiMsg];
+      setMessages(allMessages);
+
+      // Persist to thread
+      if (activeThreadId) {
+        await saveToThread(activeThreadId, allMessages);
+        fetchThreads();
+      } else {
+        // Create new thread with first message as title
+        const createRes = await fetch(`/api/accounts/${accountId}/chats`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: content.slice(0, 50) }),
+        });
+        if (createRes.ok) {
+          const thread = await createRes.json();
+          setActiveThreadId(thread._id);
+          await saveToThread(thread._id, allMessages);
+          fetchThreads();
+        }
+      }
     } catch {
       setMessages([...newMessages, {
         role: "model",
@@ -168,10 +233,49 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
           </svg>
           <span className="text-sm font-bold text-white">AI Assistant</span>
         </div>
-        <button onClick={onClose} className="text-gray-500 hover:text-white text-lg">
-          ✕
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowThreadList(!showThreadList)}
+            className="rounded px-2 py-1 text-xs text-gray-400 hover:bg-gray-800 hover:text-white"
+            title="Chat history"
+          >
+            {threads.length > 0 ? `${threads.length} chats` : "History"}
+          </button>
+          <button
+            onClick={() => {
+              setActiveThreadId(null);
+              setMessages([]);
+              setShowThreadList(false);
+            }}
+            className="rounded px-2 py-1 text-xs text-purple-400 hover:bg-purple-900/30 hover:text-purple-300"
+          >
+            + New
+          </button>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-lg">
+            ✕
+          </button>
+        </div>
       </div>
+
+      {/* Thread list */}
+      {showThreadList && threads.length > 0 && (
+        <div className="border-b border-gray-800 max-h-48 overflow-y-auto">
+          {threads.map((t) => (
+            <button
+              key={t._id}
+              onClick={() => loadThread(t._id)}
+              className={`flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-gray-900 ${
+                activeThreadId === t._id ? "bg-gray-900 border-l-2 border-purple-500" : ""
+              }`}
+            >
+              <span className="text-xs text-gray-300 truncate max-w-[240px]">{t.title}</span>
+              <span className="text-[10px] text-gray-600 ml-2 shrink-0">
+                {new Date(t.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
