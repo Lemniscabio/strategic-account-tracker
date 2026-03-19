@@ -139,14 +139,17 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
                 <>
                   {/* Markdown content */}
                   <div className="prose prose-sm prose-invert max-w-none
-                    prose-p:my-1.5 prose-p:leading-relaxed
-                    prose-headings:my-2 prose-headings:text-white
+                    prose-p:my-3 prose-p:leading-relaxed
+                    prose-headings:mt-5 prose-headings:mb-2 prose-headings:text-white
+                    prose-h2:text-base prose-h2:font-bold prose-h2:border-b prose-h2:border-gray-800 prose-h2:pb-1
                     prose-h3:text-sm prose-h3:font-bold
-                    prose-ul:my-1.5 prose-ul:pl-4
-                    prose-ol:my-1.5 prose-ol:pl-4
-                    prose-li:my-0.5
+                    prose-ul:my-2.5 prose-ul:pl-5 prose-ul:list-disc
+                    prose-ol:my-2.5 prose-ol:pl-5 prose-ol:list-decimal
+                    prose-li:my-1.5 prose-li:leading-relaxed
                     prose-strong:text-white prose-strong:font-semibold
-                    prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
+                    prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300
+                    prose-hr:my-4 prose-hr:border-gray-800
+                    [&_ul_ul]:mt-1 [&_ul_ul]:mb-0">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
 
