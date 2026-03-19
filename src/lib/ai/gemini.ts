@@ -33,14 +33,19 @@ export interface GroundingSource {
   url: string;
 }
 
+export interface ChatResponse {
+  text: string;
+  sources: GroundingSource[];
+}
+
 /**
- * Generate a streaming chat response with built-in Google Search + URL Context.
- * Collects grounding sources and appends them as SOURCES: marker at end.
+ * Generate a chat response with Google Search + URL Context grounding.
+ * Returns the complete response with text and grounding sources.
  */
-export async function generateStreamWithSearch(
+export async function generateChatResponse(
   messages: { role: "user" | "model"; content: string }[],
   systemPrompt: string
-): Promise<AsyncGenerator<string>> {
+): Promise<ChatResponse> {
   const client = getClient();
 
   const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
@@ -55,8 +60,6 @@ export async function generateStreamWithSearch(
     });
   }
 
-  // Use non-streaming to get grounding metadata (streaming doesn't include it reliably)
-  // Then stream the text to the client
   const result = await client.models.generateContent({
     model: MODEL,
     contents,
@@ -70,8 +73,6 @@ export async function generateStreamWithSearch(
 
   const sources: GroundingSource[] = [];
 
-  // Extract grounding sources from the response
-  // Log full grounding metadata to debug what's available
   if (result.candidates) {
     for (const candidate of result.candidates) {
       const metadata = candidate.groundingMetadata;
@@ -87,17 +88,8 @@ export async function generateStreamWithSearch(
     }
   }
 
-  const fullText = result.text || "";
-
-  async function* streamText() {
-    // Yield full text as one chunk (frontend waits for complete response)
-    yield fullText;
-
-    // Yield sources as separate marker
-    if (sources.length > 0) {
-      yield `SOURCES:${JSON.stringify(sources)}`;
-    }
-  }
-
-  return streamText();
+  return {
+    text: result.text || "",
+    sources,
+  };
 }

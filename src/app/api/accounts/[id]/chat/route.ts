@@ -1,8 +1,8 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import Account from "@/lib/models/account";
 import Signal from "@/lib/models/signal";
-import { generateStreamWithSearch } from "@/lib/ai/gemini";
+import { generateChatResponse } from "@/lib/ai/gemini";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const account = await Account.findById(id).lean();
   if (!account) {
-    return new Response("Account not found", { status: 404 });
+    return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
 
   const body = await request.json();
@@ -69,30 +69,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     signals as unknown as Record<string, unknown>[]
   );
 
-  const encoder = new TextEncoder();
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        const gen = await generateStreamWithSearch(messages, systemPrompt);
-        for await (const chunk of gen) {
-          controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
-        }
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        controller.enqueue(encoder.encode(`data: [ERROR] ${msg}\n\n`));
-      } finally {
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+  try {
+    const response = await generateChatResponse(messages, systemPrompt);
+    return NextResponse.json(response);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ text: `Error: ${msg}`, sources: [] }, { status: 500 });
+  }
 }

@@ -77,46 +77,12 @@ export default function AiChat({ accountId, onClose, onKeywordsAccepted }: Props
         body: JSON.stringify({ messages: newMessages.map((m) => ({ role: m.role, content: m.content })) }),
       });
 
-      if (!res.ok || !res.body) throw new Error("Chat request failed");
-
-      // Collect the full response before rendering
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let fullText = "";
-      let sources: Source[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-          if (data.startsWith("[ERROR]")) {
-            fullText += "\n\n" + data.slice(8);
-            continue;
-          }
-          if (data.startsWith("SOURCES:")) {
-            try {
-              const parsed = JSON.parse(data.slice(8));
-              if (Array.isArray(parsed)) sources = parsed;
-            } catch { /* ignore */ }
-            continue;
-          }
-          fullText += data;
-        }
-      }
-
-      const cleanedText = cleanCitations(fullText);
+      const data = await res.json();
 
       setMessages([...newMessages, {
         role: "model",
-        content: cleanedText,
-        sources,
+        content: cleanCitations(data.text || "No response received."),
+        sources: data.sources || [],
       }]);
     } catch {
       setMessages([...newMessages, {
