@@ -29,7 +29,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     relevanceScore: null,
   }).lean();
 
+  console.log(`[score-route] Found ${unscoredSignals.length} unscored signals for account ${id}`);
   if (unscoredSignals.length === 0) {
+    // Debug: check total signals for this account
+    const totalSignals = await Signal.countDocuments({ accountId: id });
+    const suggestedSignals = await Signal.countDocuments({ accountId: id, status: "Suggested" });
+    console.log(`[score-route] Total signals: ${totalSignals}, Suggested: ${suggestedSignals}`);
     return NextResponse.json({ scored: 0, dismissed: 0 });
   }
 

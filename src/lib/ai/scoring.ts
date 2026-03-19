@@ -67,18 +67,30 @@ export async function scoreSignals(
     const prompt = buildScoringPrompt(account, batch);
 
     try {
+      console.log(`[scoring] Scoring batch of ${batch.length} signals for ${account.name}`);
       const results = await generateJSON<ScoreResult[]>(prompt);
+      console.log(`[scoring] Raw result type: ${typeof results}, isArray: ${Array.isArray(results)}`);
 
-      if (!Array.isArray(results)) continue;
+      if (!Array.isArray(results)) {
+        console.error("[scoring] Result is not an array:", JSON.stringify(results).slice(0, 200));
+        continue;
+      }
 
       const validSignalIds = new Set(batch.map((s) => s._id));
+      let matched = 0;
       for (const r of results) {
-        if (!validSignalIds.has(r.signalId)) continue;
+        if (!validSignalIds.has(r.signalId)) {
+          console.log(`[scoring] Signal ID mismatch: ${r.signalId} not in valid set`);
+          continue;
+        }
         r.score = Math.max(1, Math.min(5, Math.round(r.score)));
         r.reason = r.reason || "";
         allResults.push(r);
+        matched++;
       }
+      console.log(`[scoring] Matched ${matched}/${results.length} results`);
     } catch (err) {
+      console.error("[scoring] First attempt failed:", err instanceof Error ? err.message : err);
       try {
         const results = await generateJSON<ScoreResult[]>(prompt);
         if (Array.isArray(results)) {
@@ -90,8 +102,8 @@ export async function scoreSignals(
             allResults.push(r);
           }
         }
-      } catch {
-        console.error("Scoring failed for batch, skipping:", err);
+      } catch (err2) {
+        console.error("[scoring] Retry also failed:", err2 instanceof Error ? err2.message : err2);
       }
     }
   }
