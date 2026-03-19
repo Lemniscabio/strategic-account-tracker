@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL = "gemini-2.5-pro";
+const CHAT_MODEL = "gemini-2.5-pro";
+const SCORING_MODEL = "gemini-2.5-flash";
 
 function getClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -17,7 +18,7 @@ export async function generateJSON<T = unknown>(
   const contents = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
 
   const result = await client.models.generateContent({
-    model: MODEL,
+    model: SCORING_MODEL,
     contents,
     config: {
       responseMimeType: "application/json",
@@ -57,7 +58,7 @@ export async function generateChatResponse(
   }
 
   const result = await client.models.generateContent({
-    model: MODEL,
+    model: CHAT_MODEL,
     contents,
     config: {
       systemInstruction: systemPrompt,
